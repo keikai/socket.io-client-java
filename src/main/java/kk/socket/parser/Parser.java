@@ -5,6 +5,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.logging.Logger;
 
+import kk.json.JSONAware;
 import kk.json.JSONValue;
 import kk.socket.emitter.Emitter;
 
@@ -111,7 +112,11 @@ public class Parser {
 
             if (obj.data != null) {
                 if (nsp) str.append(",");
-                str.append(obj.data);
+                if (obj.data instanceof JSONAware) {
+                	str.append(((JSONAware)obj.data).toJSONString());
+				} else {
+					str.append(obj.data);
+				}
             }
 
             logger.fine(String.format("encoded %s as %s", obj, str));
