@@ -174,6 +174,13 @@ public class Manager extends Emitter {
         }
     }
 
+	/**
+	 * Internal use only.
+	 * @return
+	 */
+	public kk.socket.engineio.client.Socket engine() {
+    	return this.engine;
+	}
     public boolean reconnection() {
         return this._reconnection;
     }
