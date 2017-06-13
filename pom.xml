@@ -52,11 +52,28 @@
         <enabled>true</enabled>
       </snapshots>
     </repository>
+    <repository>
+        <id>Keikai</id>
+        <name>Keikai Repository</name>
+        <url>http://mavensync.zkoss.org/maven2</url>
+    </repository>
   </repositories>
 
   <prerequisites>
     <maven>3.0.4</maven>
   </prerequisites>
+
+  <profiles>
+    <profile>
+      <id>java8-doclint-disabled</id>
+      <activation>
+        <jdk>[1.8,)</jdk>
+      </activation>
+      <properties>
+        <javadoc.opts>-Xdoclint:none</javadoc.opts>
+      </properties>
+    </profile>
+  </profiles>
 
   <dependencies>
     <dependency>
@@ -164,6 +181,9 @@
             </goals>
           </execution>
         </executions>
+        <configuration>
+            <additionalparam>${javadoc.opts}</additionalparam>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
