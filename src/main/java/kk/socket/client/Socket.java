@@ -408,9 +408,10 @@ public class Socket extends Emitter {
      * @return a reference to this object.
      */
     public Socket close() {
-        EventThread.exec(new Runnable() {
-            @Override
-            public void run() {
+    	// don't use async call here.
+//        EventThread.exec(new Runnable() {
+//            @Override
+//            public void run() {
                 if (Socket.this.connected) {
                     logger.fine(String.format("performing disconnect (%s)", Socket.this.nsp));
                     Socket.this.packet(new Packet(Parser.DISCONNECT));
@@ -421,8 +422,8 @@ public class Socket extends Emitter {
                 if (Socket.this.connected) {
                     Socket.this.onclose("io client disconnect");
                 }
-            }
-        });
+//            }
+//        });
         return this;
     }
 
