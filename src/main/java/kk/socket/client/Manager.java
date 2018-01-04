@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.net.ssl.HostnameVerifier;
@@ -20,7 +21,6 @@ import kk.socket.backo.Backoff;
 import kk.socket.emitter.Emitter;
 import kk.socket.parser.Packet;
 import kk.socket.parser.Parser;
-import kk.socket.thread.EventThread;
 
 /**
  * Manager class represents a connection to a given Socket.IO server.
@@ -105,6 +105,8 @@ public class Manager extends Emitter {
     /*package*/ kk.socket.engineio.client.Socket engine;
     private Parser.Encoder encoder;
     private Parser.Decoder decoder;
+
+	protected ReentrantLock lock = new ReentrantLock();
 
     /**
      * This HashMap can be accessed from outside of EventThread.
@@ -262,90 +264,98 @@ public class Manager extends Emitter {
      * @return a reference to this object.
      */
     public Manager open(final OpenCallback fn) {
-        EventThread.exec(new Runnable() {
-            @Override
-            public void run() {
-                logger.fine(String.format("readyState %s", Manager.this.readyState));
-                if (Manager.this.readyState == ReadyState.OPEN || Manager.this.readyState == ReadyState.OPENING) return;
+        lock.lock();
+        try {
+			logger.fine(String.format("readyState %s", Manager.this.readyState));
+			if (Manager.this.readyState == ReadyState.OPEN
+					|| Manager.this.readyState == ReadyState.OPENING)
+				return this;
 
-                logger.fine(String.format("opening %s", Manager.this.uri));
-                Manager.this.engine = new Engine(Manager.this.uri, Manager.this.opts);
-                final kk.socket.engineio.client.Socket socket = Manager.this.engine;
-                final Manager self = Manager.this;
-                Manager.this.readyState = ReadyState.OPENING;
-                Manager.this.skipReconnect = false;
+			logger.fine(String.format("opening %s", Manager.this.uri));
+			Manager.this.engine = new Engine(Manager.this.uri, Manager.this.opts);
+			final kk.socket.engineio.client.Socket socket = Manager.this.engine;
+			final Manager self = Manager.this;
+			Manager.this.readyState = ReadyState.OPENING;
+			Manager.this.skipReconnect = false;
 
-                // propagate transport event.
-                socket.on(Engine.EVENT_TRANSPORT, new Listener() {
-                    @Override
-                    public void call(Object... args) {
-                        self.emit(Manager.EVENT_TRANSPORT, args);
-                    }
-                });
+			// propagate transport event.
+			socket.on(Engine.EVENT_TRANSPORT, new Listener() {
+				@Override
+				public void call(Object... args) {
+					self.emit(Manager.EVENT_TRANSPORT, args);
+				}
+			});
 
-                final On.Handle openSub = On.on(socket, Engine.EVENT_OPEN, new Listener() {
-                    @Override
-                    public void call(Object... objects) {
-                        self.onopen();
-                        if (fn != null) fn.call(null);
-                    }
-                });
+			final On.Handle openSub = On.on(socket, Engine.EVENT_OPEN, new Listener() {
+				@Override
+				public void call(Object... objects) {
+					self.onopen();
+					if (fn != null)
+						fn.call(null);
+				}
+			});
 
-                On.Handle errorSub = On.on(socket, Engine.EVENT_ERROR, new Listener() {
-                    @Override
-                    public void call(Object... objects) {
-                        Object data = objects.length > 0 ? objects[0] : null;
-                        logger.fine("connect_error");
-                        self.cleanup();
-                        self.readyState = ReadyState.CLOSED;
-                        self.emitAll(EVENT_CONNECT_ERROR, data);
-                        if (fn != null) {
-                            Exception err = new SocketIOException("Connection error",
-                                    data instanceof Exception ? (Exception) data : null);
-                            fn.call(err);
-                        } else {
-                            // Only do this if there is no fn to handle the error
-                            self.maybeReconnectOnOpen();
-                        }
-                    }
-                });
+			On.Handle errorSub = On.on(socket, Engine.EVENT_ERROR, new Listener() {
+				@Override
+				public void call(Object... objects) {
+					Object data = objects.length > 0 ? objects[0] : null;
+					logger.fine("connect_error");
+					self.cleanup();
+					self.readyState = ReadyState.CLOSED;
+					self.emitAll(EVENT_CONNECT_ERROR, data);
+					if (fn != null) {
+						Exception err = new SocketIOException("Connection error",
+								data instanceof Exception ?
+										(Exception) data :
+										null);
+						fn.call(err);
+					} else {
+						// Only do this if there is no fn to handle the error
+						self.maybeReconnectOnOpen();
+					}
+				}
+			});
 
-                if (Manager.this._timeout >= 0) {
-                    final long timeout = Manager.this._timeout;
-                    logger.fine(String.format("connection attempt will timeout after %d", timeout));
+			if (Manager.this._timeout >= 0) {
+				final long timeout = Manager.this._timeout;
+				logger.fine(String.format(
+						"connection attempt will timeout after %d", timeout));
 
-                    final Timer timer = new Timer();
-                    timer.schedule(new TimerTask() {
-                        @Override
-                        public void run() {
-                            EventThread.exec(new Runnable() {
-                                @Override
-                                public void run() {
-                                    logger.fine(String.format("connect attempt timed out after %d", timeout));
-                                    openSub.destroy();
-                                    socket.close();
-                                    socket.emit(Engine.EVENT_ERROR, new SocketIOException("timeout"));
-                                    self.emitAll(EVENT_CONNECT_TIMEOUT, timeout);
-                                }
-                            });
-                        }
-                    }, timeout);
+				final Timer timer = new Timer();
+				timer.schedule(new TimerTask() {
+					@Override
+					public void run() {
+						lock.lock();
+						try {
+							logger.fine(String.format(
+									"connect attempt timed out after %d",
+									timeout));
+							openSub.destroy();
+							socket.close();
+							socket.emit(Engine.EVENT_ERROR, new SocketIOException("timeout"));
+							self.emitAll(EVENT_CONNECT_TIMEOUT, timeout);
+						} finally {
+							lock.unlock();
+						}
+					}
+				}, timeout);
 
-                    Manager.this.subs.add(new On.Handle() {
-                        @Override
-                        public void destroy() {
-                            timer.cancel();
-                        }
-                    });
-                }
+				Manager.this.subs.add(new On.Handle() {
+					@Override
+					public void destroy() {
+						timer.cancel();
+					}
+				});
+			}
 
-                Manager.this.subs.add(openSub);
-                Manager.this.subs.add(errorSub);
+			Manager.this.subs.add(openSub);
+			Manager.this.subs.add(errorSub);
 
-                Manager.this.engine.open();
-            }
-        });
-        return this;
+			Manager.this.engine.open();
+		} finally {
+        	lock.unlock();
+		}
+		return this;
     }
 
     private void onopen() {
@@ -559,36 +569,38 @@ public class Manager extends Emitter {
             timer.schedule(new TimerTask() {
                 @Override
                 public void run() {
-                    EventThread.exec(new Runnable() {
-                        @Override
-                        public void run() {
-                            if (self.skipReconnect) return;
+                    lock.lock();
+                    try {
+						if (self.skipReconnect)
+							return;
 
-                            logger.fine("attempting reconnect");
-                            int attempts = self.backoff.getAttempts();
-                            self.emitAll(EVENT_RECONNECT_ATTEMPT, attempts);
-                            self.emitAll(EVENT_RECONNECTING, attempts);
+						logger.fine("attempting reconnect");
+						int attempts = self.backoff.getAttempts();
+						self.emitAll(EVENT_RECONNECT_ATTEMPT, attempts);
+						self.emitAll(EVENT_RECONNECTING, attempts);
 
-                            // check again for the case socket closed in above events
-                            if (self.skipReconnect) return;
+						// check again for the case socket closed in above events
+						if (self.skipReconnect)
+							return;
 
-                            self.open(new OpenCallback() {
-                                @Override
-                                public void call(Exception err) {
-                                    if (err != null) {
-                                        logger.fine("reconnect attempt error");
-                                        self.reconnecting = false;
-                                        self.reconnect();
-                                        self.emitAll(EVENT_RECONNECT_ERROR, err);
-                                    } else {
-                                        logger.fine("reconnect success");
-                                        self.onreconnect();
-                                    }
-                                }
-                            });
-                        }
-                    });
-                }
+						self.open(new OpenCallback() {
+							@Override
+							public void call(Exception err) {
+								if (err != null) {
+									logger.fine("reconnect attempt error");
+									self.reconnecting = false;
+									self.reconnect();
+									self.emitAll(EVENT_RECONNECT_ERROR, err);
+								} else {
+									logger.fine("reconnect success");
+									self.onreconnect();
+								}
+							}
+						});
+					} finally {
+                    	lock.unlock();
+					}
+				}
             }, delay);
 
             this.subs.add(new On.Handle() {

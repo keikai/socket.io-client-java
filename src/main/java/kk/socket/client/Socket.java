@@ -7,6 +7,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Logger;
 
 import kk.json.JSONArray;
@@ -14,7 +15,6 @@ import kk.socket.emitter.Emitter;
 import kk.socket.hasbinary.HasBinary;
 import kk.socket.parser.Packet;
 import kk.socket.parser.Parser;
-import kk.socket.thread.EventThread;
 
 /**
  * The socket class for Socket.IO Client.
@@ -64,6 +64,8 @@ public class Socket extends Emitter {
     public static final String EVENT_PING = Manager.EVENT_PING;
 
     public static final String EVENT_PONG = Manager.EVENT_PONG;
+
+	protected ReentrantLock lock = new ReentrantLock();
 
     protected static Map<String, Integer> events = new HashMap<String, Integer>() {{
         put(EVENT_CONNECT, 1);
@@ -127,18 +129,20 @@ public class Socket extends Emitter {
      * Connects the socket.
      */
     public Socket open() {
-        EventThread.exec(new Runnable() {
-            @Override
-            public void run() {
-                if (Socket.this.connected) return;
+    	lock.lock();
+        try {
+			if (Socket.this.connected)
+				return this;
 
-                Socket.this.subEvents();
-                Socket.this.io.open(); // ensure open
-                if (Manager.ReadyState.OPEN == Socket.this.io.readyState) Socket.this.onopen();
-                Socket.this.emit(EVENT_CONNECTING);
-            }
-        });
-        return this;
+			Socket.this.subEvents();
+			Socket.this.io.open(); // ensure open
+			if (Manager.ReadyState.OPEN == Socket.this.io.readyState)
+				Socket.this.onopen();
+			Socket.this.emit(EVENT_CONNECTING);
+		} finally {
+        	lock.unlock();
+		}
+		return this;
     }
 
     /**
@@ -155,13 +159,13 @@ public class Socket extends Emitter {
      * @return a reference to this object.
      */
     public Socket send(final Object... args) {
-        EventThread.exec(new Runnable() {
-            @Override
-            public void run() {
-                Socket.this.emit(EVENT_MESSAGE, args);
-            }
-        });
-        return this;
+        lock.lock();
+        try {
+			Socket.this.emit(EVENT_MESSAGE, args);
+		} finally {
+        	lock.unlock();
+		}
+		return this;
     }
 
     /**
@@ -173,40 +177,46 @@ public class Socket extends Emitter {
      */
     @Override
     public Emitter emit(final String event, final Object... args) {
-        EventThread.exec(new Runnable() {
-            @Override
-            public void run() {
-                if (events.containsKey(event)) {
-                    Socket.super.emit(event, args);
-                    return;
-                }
+		lock.lock();
+		try {
+			if (events.containsKey(event)) {
+				Socket.super.emit(event, args);
+				return this;
+			}
 
-                List<Object> _args = new ArrayList<Object>(args.length + 1);
-                _args.add(event);
-                _args.addAll(Arrays.asList(args));
+			List<Object> _args = new ArrayList<Object>(args.length + 1);
+			_args.add(event);
+			_args.addAll(Arrays.asList(args));
 
-                JSONArray jsonArgs = new JSONArray();
-                for (Object arg : _args) {
-                    jsonArgs.add(arg);
-                }
-                int parserType = HasBinary.hasBinary(jsonArgs) ? Parser.BINARY_EVENT : Parser.EVENT;
-                Packet<JSONArray> packet = new Packet<JSONArray>(parserType, jsonArgs);
+			JSONArray jsonArgs = new JSONArray();
+			for (Object arg : _args) {
+				jsonArgs.add(arg);
+			}
+			int parserType = HasBinary.hasBinary(jsonArgs) ?
+					Parser.BINARY_EVENT :
+					Parser.EVENT;
+			Packet<JSONArray> packet = new Packet<JSONArray>(parserType,
+					jsonArgs);
 
-                if (_args.get(_args.size() - 1) instanceof Ack) {
-                    logger.fine(String.format("emitting packet with ack id %d", Socket.this.ids));
-                    Socket.this.acks.put(Socket.this.ids, (Ack)_args.remove(_args.size() - 1));
-                    jsonArgs.removeLast();
-                    packet.data = jsonArgs;
-                    packet.id = Socket.this.ids++;
-                }
+			if (_args.get(_args.size() - 1) instanceof Ack) {
+				logger.fine(String.format("emitting packet with ack id %d",
+						Socket.this.ids));
+				Socket.this.acks.put(Socket.this.ids,
+						(Ack) _args.remove(_args.size() - 1));
+				jsonArgs.removeLast();
+				packet.data = jsonArgs;
+				packet.id = Socket.this.ids++;
+			}
 
-                if (Socket.this.connected) {
-                    Socket.this.packet(packet);
-                } else {
-                    Socket.this.sendBuffer.add(packet);
-                }
-            }
-        });
+			if (Socket.this.connected) {
+				Socket.this.packet(packet);
+			} else {
+				Socket.this.sendBuffer.add(packet);
+			}
+		} finally {
+			lock.unlock();
+		}
+
         return this;
     }
 
@@ -219,28 +229,31 @@ public class Socket extends Emitter {
      * @return a reference to this object.
      */
     public Emitter emit(final String event, final Object[] args, final Ack ack) {
-        EventThread.exec(new Runnable() {
-            @Override
-            public void run() {
-                List<Object> _args = new ArrayList<Object>() {{
-                    add(event);
-                    if (args != null) {
-                        addAll(Arrays.asList(args));
-                    }
-                }};
-                
-                JSONArray jsonArgs = new JSONArray(_args);
-                int parserType = HasBinary.hasBinary(jsonArgs) ? Parser.BINARY_EVENT : Parser.EVENT;
-                Packet<JSONArray> packet = new Packet<JSONArray>(parserType, jsonArgs);
+		lock.lock();
+		try {
+			List<Object> _args = new ArrayList<Object>() {{
+				add(event);
+				if (args != null) {
+					addAll(Arrays.asList(args));
+				}
+			}};
 
-                logger.fine(String.format("emitting packet with ack id %d", ids));
-                Socket.this.acks.put(ids, ack);
-                packet.id = ids++;
+			JSONArray jsonArgs = new JSONArray(_args);
+			int parserType = HasBinary.hasBinary(jsonArgs) ?
+					Parser.BINARY_EVENT :
+					Parser.EVENT;
+			Packet<JSONArray> packet = new Packet<JSONArray>(parserType,
+					jsonArgs);
 
-                Socket.this.packet(packet);
-            }
-        });
-        return this;
+			logger.fine(String.format("emitting packet with ack id %d", ids));
+			Socket.this.acks.put(ids, ack);
+			packet.id = ids++;
+
+			Socket.this.packet(packet);
+		} finally {
+			lock.unlock();
+		}
+		return this;
     }
 
     private void packet(Packet packet) {
@@ -333,23 +346,27 @@ public class Socket extends Emitter {
         return new Ack() {
             @Override
             public void call(final Object... args) {
-                EventThread.exec(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (sent[0]) return;
-                        sent[0] = true;
-                        logger.fine(String.format("sending ack %s", args.length != 0 ? args : null));
+				lock.lock();
+				try {
+					if (sent[0])
+						return;
+					sent[0] = true;
+					logger.fine(String.format("sending ack %s",
+							args.length != 0 ? args : null));
 
-                        JSONArray jsonArgs = new JSONArray(Arrays.asList(args));
+					JSONArray jsonArgs = new JSONArray(Arrays.asList(args));
 
-                        int type = HasBinary.hasBinary(jsonArgs)
-                            ? Parser.BINARY_ACK : Parser.ACK;
-                        Packet<JSONArray> packet = new Packet<JSONArray>(type, jsonArgs);
-                        packet.id = id;
-                        self.packet(packet);
-                    }
-                });
-            }
+					int type = HasBinary.hasBinary(jsonArgs) ?
+							Parser.BINARY_ACK :
+							Parser.ACK;
+					Packet<JSONArray> packet = new Packet<JSONArray>(type,
+							jsonArgs);
+					packet.id = id;
+					self.packet(packet);
+				} finally {
+					lock.unlock();
+				}
+			}
         };
     }
 
