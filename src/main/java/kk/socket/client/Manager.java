@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.net.ssl.HostnameVerifier;
@@ -20,7 +21,7 @@ import kk.socket.backo.Backoff;
 import kk.socket.emitter.Emitter;
 import kk.socket.parser.Packet;
 import kk.socket.parser.Parser;
-import kk.socket.thread.EventThread;
+import kk.socket.thread.EventThreadHelper;
 
 /**
  * Manager class represents a connection to a given Socket.IO server.
@@ -105,6 +106,7 @@ public class Manager extends Emitter {
     /*package*/ kk.socket.engineio.client.Socket engine;
     private Parser.Encoder encoder;
     private Parser.Decoder decoder;
+    public ExecutorService service;// = Executors.newFixedThreadPool(1);
 
     /**
      * This HashMap can be accessed from outside of EventThread.
@@ -131,6 +133,7 @@ public class Manager extends Emitter {
         if (opts.path == null) {
             opts.path = "/socket.io";
         }
+        service = EventThreadHelper.newFixedThreadPool(1);
 //        if (opts.sslContext == null) {
 //            opts.sslContext = defaultSSLContext;
 //        }
@@ -138,6 +141,7 @@ public class Manager extends Emitter {
 //            opts.hostnameVerifier = defaultHostnameVerifier;
 //        }
         this.opts = opts;
+        this.opts.service = service;
         this.nsps = new ConcurrentHashMap<String, Socket>();
         this.subs = new LinkedList<On.Handle>();
         this.reconnection(opts.reconnection);
@@ -262,7 +266,7 @@ public class Manager extends Emitter {
      * @return a reference to this object.
      */
     public Manager open(final OpenCallback fn) {
-        EventThread.exec(new Runnable() {
+        EventThreadHelper.exec(new Runnable() {
             @Override
             public void run() {
                 logger.fine(String.format("readyState %s", Manager.this.readyState));
@@ -318,7 +322,7 @@ public class Manager extends Emitter {
                     timer.schedule(new TimerTask() {
                         @Override
                         public void run() {
-                            EventThread.exec(new Runnable() {
+                            EventThreadHelper.exec(new Runnable() {
                                 @Override
                                 public void run() {
                                     logger.fine(String.format("connect attempt timed out after %d", timeout));
@@ -327,7 +331,7 @@ public class Manager extends Emitter {
                                     socket.emit(Engine.EVENT_ERROR, new SocketIOException("timeout"));
                                     self.emitAll(EVENT_CONNECT_TIMEOUT, timeout);
                                 }
-                            });
+                            }, service);
                         }
                     }, timeout);
 
@@ -344,7 +348,7 @@ public class Manager extends Emitter {
 
                 Manager.this.engine.open();
             }
-        });
+        }, service);
         return this;
     }
 
@@ -465,6 +469,8 @@ public class Manager extends Emitter {
         if (!this.connecting.isEmpty()) return;
 
         this.close();
+
+		service.shutdown();
     }
 
     /*package*/ void packet(Packet packet) {
@@ -559,7 +565,7 @@ public class Manager extends Emitter {
             timer.schedule(new TimerTask() {
                 @Override
                 public void run() {
-                    EventThread.exec(new Runnable() {
+                    EventThreadHelper.exec(new Runnable() {
                         @Override
                         public void run() {
                             if (self.skipReconnect) return;
@@ -587,7 +593,7 @@ public class Manager extends Emitter {
                                 }
                             });
                         }
-                    });
+                    }, service);
                 }
             }, delay);
 

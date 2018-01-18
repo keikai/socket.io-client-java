@@ -14,7 +14,7 @@ import kk.socket.emitter.Emitter;
 import kk.socket.hasbinary.HasBinary;
 import kk.socket.parser.Packet;
 import kk.socket.parser.Parser;
-import kk.socket.thread.EventThread;
+import kk.socket.thread.EventThreadHelper;
 
 /**
  * The socket class for Socket.IO Client.
@@ -127,7 +127,7 @@ public class Socket extends Emitter {
      * Connects the socket.
      */
     public Socket open() {
-        EventThread.exec(new Runnable() {
+        EventThreadHelper.exec(new Runnable() {
             @Override
             public void run() {
                 if (Socket.this.connected) return;
@@ -137,7 +137,7 @@ public class Socket extends Emitter {
                 if (Manager.ReadyState.OPEN == Socket.this.io.readyState) Socket.this.onopen();
                 Socket.this.emit(EVENT_CONNECTING);
             }
-        });
+        }, io.service);
         return this;
     }
 
@@ -155,12 +155,12 @@ public class Socket extends Emitter {
      * @return a reference to this object.
      */
     public Socket send(final Object... args) {
-        EventThread.exec(new Runnable() {
+        EventThreadHelper.exec(new Runnable() {
             @Override
             public void run() {
                 Socket.this.emit(EVENT_MESSAGE, args);
             }
-        });
+        }, io.service);
         return this;
     }
 
@@ -173,7 +173,7 @@ public class Socket extends Emitter {
      */
     @Override
     public Emitter emit(final String event, final Object... args) {
-        EventThread.exec(new Runnable() {
+        EventThreadHelper.exec(new Runnable() {
             @Override
             public void run() {
                 if (events.containsKey(event)) {
@@ -206,7 +206,7 @@ public class Socket extends Emitter {
                     Socket.this.sendBuffer.add(packet);
                 }
             }
-        });
+        }, io.service);
         return this;
     }
 
@@ -219,7 +219,7 @@ public class Socket extends Emitter {
      * @return a reference to this object.
      */
     public Emitter emit(final String event, final Object[] args, final Ack ack) {
-        EventThread.exec(new Runnable() {
+        EventThreadHelper.exec(new Runnable() {
             @Override
             public void run() {
                 List<Object> _args = new ArrayList<Object>() {{
@@ -239,7 +239,7 @@ public class Socket extends Emitter {
 
                 Socket.this.packet(packet);
             }
-        });
+        }, io.service);
         return this;
     }
 
@@ -333,7 +333,7 @@ public class Socket extends Emitter {
         return new Ack() {
             @Override
             public void call(final Object... args) {
-                EventThread.exec(new Runnable() {
+                EventThreadHelper.exec(new Runnable() {
                     @Override
                     public void run() {
                         if (sent[0]) return;
@@ -348,7 +348,7 @@ public class Socket extends Emitter {
                         packet.id = id;
                         self.packet(packet);
                     }
-                });
+                }, io.service);
             }
         };
     }
