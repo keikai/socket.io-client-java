@@ -71,14 +71,15 @@ public class Binary {
         if (data instanceof JSONArray) {
             JSONArray _data = (JSONArray)data;
             int i = 0;
-            for (Object v : _data) {
-				_data.add(i, _reconstructPacket(v, buffers));
+            for (Object v : new ArrayList<>(_data)) {
+				_data.set(i, _reconstructPacket(v, buffers));
 				i++;
             }
             return _data;
         } else if (data instanceof JSONObject) {
             JSONObject _data = (JSONObject)data;
-            if (Boolean.valueOf((String)_data.get(KEY_PLACEHOLDER))) {
+			Object r = _data.get(KEY_PLACEHOLDER);
+            if (r instanceof Boolean || Boolean.valueOf((String)_data.get(KEY_PLACEHOLDER))) {
                 int num = Optional.<Integer>of((Integer)_data.get(KEY_NUM)).orElse(-1);
                 return num >= 0 && num < buffers.length ? buffers[num] : null;
             }
