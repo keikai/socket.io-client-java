@@ -195,7 +195,7 @@ public class Socket extends Emitter {
                 if (_args.get(_args.size() - 1) instanceof Ack) {
                     logger.fine(String.format("emitting packet with ack id %d", Socket.this.ids));
                     Socket.this.acks.put(Socket.this.ids, (Ack)_args.remove(_args.size() - 1));
-                    jsonArgs.removeLast();
+                    jsonArgs.remove(jsonArgs.size() - 1);
                     packet.data = jsonArgs;
                     packet.id = Socket.this.ids++;
                 }
