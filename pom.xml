@@ -2,7 +2,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.keikai</groupId>
   <artifactId>socket.io-client</artifactId>
-  <version>0.8.4.2</version>
+  <version>0.8.4.3</version>
   <packaging>jar</packaging>
   <name>socket.io-client</name>
   <description>Socket.IO Client Library for Java</description>
@@ -79,7 +79,7 @@
     <dependency>
       <groupId>io.keikai</groupId>
       <artifactId>engine.io-client</artifactId>
-      <version>0.8.4.2</version>
+      <version>0.8.4.3</version>
     </dependency>
     <dependency>
       <groupId>junit</groupId>
