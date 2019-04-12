@@ -180,3 +180,6 @@ This library supports all of the features the JS client does, including events, 
 
 MIT
 
+## Who Uses
+
+* [Keikai](https://keikai.io) - a sophisticated spreadsheet for big data
