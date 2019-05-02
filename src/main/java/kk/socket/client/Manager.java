@@ -303,6 +303,7 @@ public class Manager extends Emitter {
                         self.cleanup();
                         self.readyState = ReadyState.CLOSED;
                         self.emitAll(EVENT_CONNECT_ERROR, data);
+                        self.engine.close();
                         if (fn != null) {
                             Exception err = new SocketIOException("Connection error",
                                     data instanceof Exception ? (Exception) data : null);
