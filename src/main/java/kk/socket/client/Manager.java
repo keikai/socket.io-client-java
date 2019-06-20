@@ -12,6 +12,7 @@ import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.net.ssl.HostnameVerifier;
@@ -471,7 +472,9 @@ public class Manager extends Emitter {
 
         this.close();
 
-		service.shutdown();
+		EventThreadHelper.shutdownWithTimeout(service, 10, TimeUnit.MINUTES);
+		service = null;
+		this.opts.service = null;
     }
 
     /*package*/ void packet(Packet packet) {
