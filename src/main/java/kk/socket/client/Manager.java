@@ -473,8 +473,6 @@ public class Manager extends Emitter {
         this.close();
 
 		EventThreadHelper.shutdownWithTimeout(service, 10, TimeUnit.MINUTES);
-		service = null;
-		this.opts.service = null;
     }
 
     /*package*/ void packet(Packet packet) {
